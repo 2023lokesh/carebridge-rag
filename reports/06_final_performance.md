@@ -1,6 +1,6 @@
 # 06 — Measured performance and grading gaps
 
-**Development retrieval actually measured; B0, full answer scoring and sealed TEST pending** as of October 10, 2026.
+**Development retrieval and B0–B3 generated-answer runs actually completed; human-score QA and sealed TEST remain pending** as of October 10, 2026.
 
 ### Real archived sources and indexes
 - CDC: **165 raw pages; 163 distinct normalized CDC pages; 35 PDFs; 13 table-bearing HTML pages; 3,063 normalized blocks; no crawl errors or raw hash mismatches**. [Run #38016315533](https://github.com/2023lokesh/carebridge-rag/actions/runs/38016315533).
@@ -24,8 +24,8 @@ The measured query timings exclude startup, generator inference, network latency
 **Paired 95% bootstrap Recall@5 intervals** (2,000 replicates; seed 633; same 18 items): B1→B2 gain +0.1111 **[-0.1667, 0.3889]**, B1→B3 +0.1944 **[-0.0556, 0.4444]**, B2→B3 +0.0833 **[-0.0278, 0.2222]**. One-factor within-B3 cross-encoder RRF-candidate reranking gain +0.0833 **[-0.1111, 0.2778]**; MRR changes -0.0204. **All nonzero intervals cross zero; no confirmed gain at 95% confidence.** See `reports/04_retrieval_reranking.md`.
 
 ### Still outstanding; do not invent
-1. Actual B0 closed-book and 24×4 B1/B2/B3 generated-answer experiments (workflow merged in PR #14, not yet dispatched).
-2. **96 genuine human** factual/citation/refusal/clinical-safety evaluations, B0-known vs B0-unknown subsets, paired correctness CIs, end-to-end p50/p95 and recorded compute cost.
+1. **COMPLETED:** Actual B0 closed-book and 24×4 B1/B2/B3 generated-answer runs in [workflow #38066174591](https://github.com/2023lokesh/carebridge-rag/actions/runs/38066174591): all 96 model responses, zero TEST items, and automated cold-excluded latency/citation/abstention diagnostics. **Unresolved:** The team-entered human judgments require QA after reconciliation with the original model outputs; see [generation evidence and review audit](05_generation.md).
+2. Team-entered **96 human rating rows** exist, but inconsistencies with the actual generated answers prevent release of validated factual/citation/refusal/clinical-safety rates. Correct all audit flags, document failure labels, and compute paired human correctness CIs plus B0-correct/B0-incorrect subset analysis. Warm total-generation latency is already measured (see report 05); compute cost remains unmonetized.
 3. **>=15 genuine manually classified failures**, documented adversarial injection, staleness checks, full deployed neural backend parity, metadata filtering demonstrations.
 4. The **one-time 16-item TEST run**, only *after* DEV selection is frozen and approval obtained. Do not peek or repeatedly tune on TEST.
 5. Course instructor ruling about AI-assisted original gold questions and Friday-before-chatbot independent student authorship; do not backdate.
