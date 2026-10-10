@@ -25,7 +25,7 @@ def load_documents(path: str | Path | None = None):
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 def tokenize(text: str):
-    return re.findall(r"[\w]+(?:[-'][\w]+)?", text.lower())
+    return re.findall(r"[a-z0-9]+", text.lower())
 
 def chunk_documents(documents, strategy="fixed", size=450, overlap=75, min_size=1):
     if strategy not in {"fixed", "heading"}:
