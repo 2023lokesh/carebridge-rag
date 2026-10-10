@@ -1,0 +1,45 @@
+name: Collect and audit public CDC corpus
+on:
+  workflow_dispatch:
+    inputs:
+      max_pages:
+        description: 'Maximum successful downloads (target at least 150)'
+        required: true
+        default: '165'
+        type: string
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r requirements.txt
+      - name: Require approved contact email
+        env:
+          CONTACT_EMAIL: ${{ secrets.CRAWL_CONTACT_EMAIL }}
+        run: |
+          if [ -z "$CONTACT_EMAIL" ]; then
+            echo 'Set CRAWL_CONTACT_EMAIL in repository Actions secrets. No crawl attempted.'
+            exit 1
+          fi
+      - name: Ethical public crawl, raw archive and normalized extraction
+        env:
+          CONTACT_EMAIL: ${{ secrets.CRAWL_CONTACT_EMAIL }}
+          MAX_PAGES: ${{ inputs.max_pages }}
+        run: python -m scripts.collect_corpus --contact "$CONTACT_EMAIL" --max-pages "$MAX_PAGES"
+      - name: Always upload actual evidence (even when thresholds fail)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cdc-crawl-evidence-${{ github.run_id }}
+          path: |
+            data/raw/
+            data/normalized.jsonl
+            reports/01_ingestion_metrics.json
+          retention-days: 7
+          if-no-files-found: warn

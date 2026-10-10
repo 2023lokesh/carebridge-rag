@@ -108,3 +108,8 @@ scripts/smoke_test.py      Running-service smoke test
 .github/workflows/tests.yml GitHub Actions test workflow
 tests/                     Automated tests
 ```
+
+
+## MSAI 633 evaluation-workflow update
+
+The feature branch includes a [graded-workflow runbook](docs/EVALUATION_RUNBOOK.md), a [crawl audit](carebridge/audit.py), a [40-question AI-generated *practice* set](data/practice_question_ideas.jsonl), [branch-protection setup instructions](docs/BRANCH_PROTECTION.md), and honest, unexecuted report templates. Practice examples are **not** independently human-verified gold items. The full 150-document CDC crawl and B0–B3 scoring still require actual execution and team verification. This project currently runs a small prototype on Render; it is not a clinical decision-support system.

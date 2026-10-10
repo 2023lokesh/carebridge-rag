@@ -1,0 +1,5 @@
+# 04 — Retrieval, ranking and ablation
+
+**Status: implementation partly present; graded comparisons not yet measured.** B1 BM25, B2 real neural embeddings with naive/fixed chunks, B3 structure-aware BM25 + neural RRF with actual cross-encoder reranking all require a real normalized ≥150-document corpus and verified gold labels. The public site uses a **TF-IDF proxy** and a **lightweight lexical postscore**, not neural embeddings or a cross-encoder. These cannot be labeled B2/B3 measurements.
+
+The exploratory measurements in `reports/practice_diagnostics.json` are only on AI-suggested practice prompts versus bundled mini-demo candidate URL matches. They are *not* recall against human-verified relevant chunks. Do not use them in a final performance claim. Actual experiment must report Recall@5/20, MRR, nDCG@10, reranker lift versus same 20-candidate pool, added latency, and one-factor changes. Prepare per-item paired deltas and 95% bootstrap confidence intervals or McNemar's test for every improvement claim.

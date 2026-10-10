@@ -1,43 +1,68 @@
-"""Real dense embedding and persistent Chroma index with stale-chunk deletion.
+"""Versioned Chroma re-chunk migration: no re-crawl, atomic active-pointer swap.
 
-Requires: pip install -r requirements-full.txt
-python -m carebridge.index --corpus data/normalized.jsonl --strategy heading
+Requires requirements-full.txt and saved normalized.jsonl. Validates zero orphan
+chunk IDs, then switches active collection. A failed build leaves old active intact.
 """
 import argparse
+import hashlib
 import json
+import os
+import statistics
 from pathlib import Path
 from .corpus import chunk_documents,load_documents
 
-def rebuild(corpus,db_dir="data/chroma",strategy="heading",collection_name="carebridge"):
-    import numpy as np
+def chunk_stats(chunks):
+    sizes=sorted(len(c['text'].split()) for c in chunks)
+    return {'chunks':len(chunks),'p50_words':statistics.median(sizes) if sizes else None,
+            'p95_words':sizes[min(len(sizes)-1,round((len(sizes)-1)*.95))] if sizes else None,
+            'min_words':min(sizes) if sizes else None, 'max_words':max(sizes) if sizes else None}
+
+def rebuild(corpus,db_dir='data/chroma',strategy='heading',collection_name='carebridge'):
     import chromadb
     from sentence_transformers import SentenceTransformer
-    model_name="sentence-transformers/all-MiniLM-L6-v2"
+    if strategy not in {'fixed','heading'}:raise ValueError('Unknown chunking strategy')
+    corpus=Path(corpus);db_dir=Path(db_dir)
+    model_name='sentence-transformers/all-MiniLM-L6-v2'
     model=SentenceTransformer(model_name)
     chunks=chunk_documents(load_documents(corpus),strategy)
-    db=chromadb.PersistentClient(path=db_dir)
-    collection=db.get_or_create_collection(name=collection_name,metadata={"hnsw:space":"cosine"})
-    existing=collection.get(include=[])["ids"]
-    # Delete stale chunks BEFORE inserting the new strategy; explicitly verify no old IDs survive.
-    if existing:collection.delete(ids=existing)
-    assert collection.count()==0,"Failed to delete previous chunk IDs"
+    if not chunks:raise ValueError('No normalized chunks available: refusing empty index')
+    ids=[r['chunk_id'] for r in chunks]
+    if len(ids)!=len(set(ids)):raise ValueError('Deterministic chunk IDs must be unique')
+    digest=hashlib.sha256(corpus.read_bytes()+strategy.encode()).hexdigest()[:16]
+    active_name=f'{collection_name}_{strategy}_{digest}'
+    db_dir.mkdir(parents=True,exist_ok=True)
+    client=chromadb.PersistentClient(path=str(db_dir))
+    pointer=db_dir/'active_index.json'
+    old=json.loads(pointer.read_text()) if pointer.exists() else {}
+    # Create new immutable version: old collection remains queryable until finished.
+    coll=client.get_or_create_collection(name=active_name,metadata={'hnsw:space':'cosine'})
+    present=coll.get(include=[])['ids']
+    if present:coll.delete(ids=present)   # Only resets the *new version* on retries.
     for start in range(0,len(chunks),64):
         batch=chunks[start:start+64]
-        embeddings=np.asarray(model.encode([x["text"] for x in batch],normalize_embeddings=True),dtype=float)
-        collection.upsert(ids=[r["chunk_id"] for r in batch],documents=[r["text"] for r in batch],
-             embeddings=embeddings.tolist(),metadatas=[{"url":r["url"],"title":r["title"],"page_type":r.get("page_type","html"),
-             "section":r.get("section",""),"strategy":strategy} for r in batch])
-    with (Path(db_dir).parent/"active_chunks.jsonl").open("w",encoding="utf-8") as manifest:
-        for row in chunks:manifest.write(json.dumps(row,ensure_ascii=False)+"\n")
-    current=set(collection.get(include=[])["ids"])
-    expected={r["chunk_id"] for r in chunks}
-    if current!=expected:raise AssertionError(f"Orphan mismatch: unexpected {len(current-expected)}, missing {len(expected-current)}")
-    summary={"strategy":strategy,"chunks":len(chunks),"ids_verified":len(current),"orphans":len(current-expected),
-             "model":model_name,"dimension":384,"metric":"cosine","l2_normalized":True}
-    Path(db_dir).mkdir(exist_ok=True,parents=True)
-    (Path(db_dir)/"index_build.json").write_text(json.dumps(summary,indent=2),encoding="utf-8")
-    return summary
+        embeddings=model.encode([x['text'] for x in batch],normalize_embeddings=True).tolist()
+        coll.upsert(ids=[r['chunk_id'] for r in batch],documents=[r['text'] for r in batch],
+            embeddings=embeddings,metadatas=[{'url':r['url'],'title':r['title'],
+                 'page_type':r.get('page_type','html'),'section':r.get('section',''),
+                 'strategy':strategy} for r in batch])
+    actual=set(coll.get(include=[])['ids']);expected=set(ids)
+    if actual!=expected:raise AssertionError(f'Index mismatch: orphans={len(actual-expected)}, missing={len(expected-actual)}')
+    row={'strategy':strategy,'collection':active_name,'corpus_sha256':hashlib.sha256(corpus.read_bytes()).hexdigest(),
+         'chunks':len(chunks),'ids_verified':len(actual),'orphans':0,
+         'model':model_name,'dimension':384,'metric':'cosine','l2_normalized':True,
+         'token_length_proxy':'whitespace-word counts, NOT model tokenizer',**chunk_stats(chunks)}
+    # Swap manifests only after index verification; do not overwrite when failed.
+    chunk_out=db_dir/'active_chunks.jsonl'
+    staging=db_dir/'active_chunks.staging'
+    staging.write_text(''.join(json.dumps(c,ensure_ascii=False)+'\n' for c in chunks))
+    staging.replace(chunk_out)
+    tmp=pointer.with_suffix('.pending.json');tmp.write_text(json.dumps(row,indent=2))
+    tmp.replace(pointer)
+    if old.get('collection') and old['collection']!=active_name:
+        client.delete_collection(old['collection'])
+    (db_dir/'index_build.json').write_text(json.dumps(row,indent=2))
+    return row
 
-if __name__=="__main__":
-    p=argparse.ArgumentParser();p.add_argument("--corpus",default="data/normalized.jsonl");p.add_argument("--strategy",choices=["fixed","heading"],default="heading");p.add_argument("--db-dir",default="data/chroma")
+if __name__=='__main__':
+    p=argparse.ArgumentParser();p.add_argument('--corpus',default='data/normalized.jsonl');p.add_argument('--strategy',choices=('fixed','heading'),default='heading');p.add_argument('--db-dir',default='data/chroma')
     a=p.parse_args();print(json.dumps(rebuild(a.corpus,a.db_dir,a.strategy),indent=2))

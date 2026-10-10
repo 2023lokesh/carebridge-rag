@@ -20,6 +20,19 @@ def screen_query(question: str) -> str | None:
     q = question.strip()
     if PERSONAL_CONTACT.search(q) or re.search(r"\b\d{3}[- ]?\d{2}[- ]?\d{4}\b", q):
         return "Please do not include names, contact details, social security numbers, or other personal medical identifiers. Ask a general vaccine-education question instead."
+    # Never treat a user's attempt to override safety or citation rules as evidence.
+    if INJECTION.search(q) or re.search(r"\binvent (?:a |the )?(?:citation|reference|source)\b",q,re.I):
+        return "I cannot follow instructions to invent citations or bypass safety rules. Please ask a factual vaccine-education question."
+    if re.search(r"\b(?:private|confidential|neighbor|named patient|patient record|patient's record|medical record|vaccination status of|insurance|co-?pay|pricing|how much|cafeteria|hospital menu|wait time|phone number|cellphone|manufacturing cost|blood test|test results)\b",q,re.I):
+        return "I do not have this individual, private, financial, or facility-specific information in the approved public CDC vaccine materials. Please contact the appropriate person or professional."
+    if re.search(r"\b(?:should (?:this|that|my|a|the) patient|should (?:i|we|they|he|she) (?:get|receive)|can (?:i|my child) (?:get|receive)|whether this patient)\b",q,re.I):
+        return "I cannot decide vaccination for a specific person. A licensed clinician should review the individual's medical history and current guidance."
+    # Prevent lexical overlap with generic words like 'time' or 'good' from
+    # turning an unrelated question into a cited medical answer.
+    if not re.search(r"\b(?:vaccin\w*|immuniz\w*|shot|shots|vis|vaccine information statements?|hpv|mmr|mmrv|tdap|covid(?:[-\s]?19)?|coronavirus|shingles|zoster|pertussis|rubella|measles|hepatitis|influenza|flu|rsv|cdc)\b",q,re.I):
+        return "I do not have enough information about that topic in the approved CDC vaccine materials. Please ask a specific general vaccine-information question."
+    if PERSONAL_CONTACT.search(q) or re.search(r"\b\d{3}[- ]?\d{2}[- ]?\d{4}\b", q):
+        return "Please do not include names, contact details, social security numbers, or other personal medical identifiers. Ask a general vaccine-education question instead."
     if len(q) > 1000:
         return "Please ask a shorter, general educational question without personal health details."
     if EMERGENCY.search(q):
