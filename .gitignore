@@ -31,3 +31,7 @@ reports/dev_private/
 
 # Private development gold reconstructed from Actions secret during ephemeral evaluation
 .private_eval/
+
+# Never commit generated DEV answers or local reviewer files
+reports/generation_eval/
+reports/human_evaluation_private/
