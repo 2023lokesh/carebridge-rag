@@ -1,0 +1,59 @@
+name: Build token-safe fixed and heading-aware CDC neural indexes
+on:
+  push:
+    branches: ["course/token-safe-heading-evaluation"]
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: "Successful 150-page CDC crawl workflow run"
+        required: true
+        default: "38016315533"
+        type: string
+permissions:
+  contents: read
+  actions: read
+jobs:
+  compare-indexes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    env:
+      PYTHONUNBUFFERED: "1"
+      HF_HUB_DISABLE_TELEMETRY: "1"
+      TOKENIZERS_PARALLELISM: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Get real, archived CDC corpus
+        uses: actions/download-artifact@v4
+        with:
+          name: cdc-crawl-evidence-${{ inputs.source_run_id || '38016315533' }}
+          run-id: ${{ inputs.source_run_id || '38016315533' }}
+          github-token: ${{ github.token }}
+          path: .
+      - name: Re-audit archived bytes, source counts, PDFs and tables
+        run: python -m carebridge.audit --require-thresholds
+      - name: Install CPU neural embedding runtime
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install 'torch>=2.2,<3' --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install -r requirements.txt 'chromadb>=0.5,<2' 'sentence-transformers>=3,<6'
+      - name: Build actual tokenizer-capped fixed index (180 words, 30 overlap)
+        run: python -m carebridge.index --corpus data/normalized.jsonl --strategy fixed --db-dir data/chroma_fixed_v2
+      - name: Build actual tokenizer-capped heading-aware index from the SAME corpus
+        run: python -m carebridge.index --corpus data/normalized.jsonl --strategy heading --db-dir data/chroma_heading_v2
+      - name: Verify exact 256-token capacity, all Chroma IDs, zero orphans, shared source SHA
+        run: python -m scripts.verify_comparison_indexes --output reports/02_chunking_comparison.json
+      - name: Upload both actual neural indexes and measured comparison
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: carebridge-token-safe-indexes-${{ github.run_id }}
+          path: |
+            data/chroma_fixed_v2/
+            data/chroma_heading_v2/
+            reports/02_chunking_comparison.json
+            reports/01_ingestion_metrics.json
+          retention-days: 7
+          if-no-files-found: warn
