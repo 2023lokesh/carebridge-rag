@@ -16,6 +16,44 @@ from .safety import screen_query, safe_document_text
 
 STOP = set('what which when who why how does do did is are a an the of and for to with in on from can you me my please explain tell about your i it they differ difference between vs versus'.split())
 
+# Ignore generic matches such as "vaccine" when a user asks about a named disease.
+# RRF produces positive scores even for documents with no subject overlap.
+VACCINE_TOPIC_PATTERNS = {
+    "covid": re.compile(r"\b(?:covid(?:[-\s]?19)?|sars[-\s]?cov[-\s]?2|coronavirus)\b", re.I),
+    "hpv": re.compile(r"\b(?:hpv|human papillomavirus)\b", re.I),
+    "mmrv": re.compile(r"\bmmrv\b", re.I),
+    "mmr": re.compile(r"\bmmr\b", re.I),
+    "tdap": re.compile(r"\b(?:tdap|pertussis|whooping cough)\b", re.I),
+    "shingles": re.compile(r"\b(?:shingles|zoster)\b", re.I),
+    "flu": re.compile(r"\b(?:influenza|flu)\b", re.I),
+    "rsv": re.compile(r"\brsv\b", re.I),
+}
+GENERAL_VACCINE_WORDS = {"vaccine", "vaccines", "vaccination", "vaccinations", "shot", "shots"}
+
+def _question_topics(question):
+    return {topic for topic, pattern in VACCINE_TOPIC_PATTERNS.items() if pattern.search(question)}
+
+def _document_topics(document):
+    # Match document identity, not incidental comparisons inside passage text.
+    identity = " ".join((document.get("title", ""), document.get("section", ""), document.get("url", "")))
+    return {topic for topic, pattern in VACCINE_TOPIC_PATTERNS.items() if pattern.search(identity)}
+
+def _requested_aspect(question):
+    if re.search(r"\b(?:side effects?|adverse (?:effects?|reactions?)|reactions?|risks?|safety|safe)\b", question, re.I):
+        return "reactions"
+    if re.search(r"\b(?:purpose|protect|protects|prevent|prevents|benefits?|vaccin(?:e|ation) for)\b", question, re.I):
+        return "purpose"
+    return None
+
+def _matches_aspect(document, aspect):
+    if aspect is None:
+        return True
+    heading = document.get("section", "").lower()
+    if aspect == "purpose":
+        return bool(re.search(r"purpose|protect|benefit|why get|prevent", heading))
+    return bool(re.search(r"side effects?|reactions?|adverse|safety|risks?", heading))
+
+
 @lru_cache(maxsize=4)
 def _index(path=""):
     docs = load_documents(path or None)
@@ -84,7 +122,7 @@ def retrieve(question, mode="hybrid", candidate_k=20, corpus_path="", rerank=Fal
                      "dense_engine":"TF-IDF proxy (demo)"}
 
 def _relevant(q, result):
-    words = set(tokenize(q)) - STOP
+    words = set(tokenize(q)) - STOP - GENERAL_VACCINE_WORDS
     title = set(tokenize(result["title"]+" "+result.get("section","")))
     text = set(tokenize(result["text"]))
     overlap = words & (text | title)
@@ -108,9 +146,18 @@ def answer(question: str, mode="hybrid", corpus_path="", rerank=False, history=N
         pool, stats = retrieve_full(resolved,mode,20,rerank=True)
     else:
         pool, stats = retrieve(resolved,mode,20,corpus_path,rerank)
-    eligible = [r for r in pool if _relevant(resolved, r)]
+    topics = _question_topics(resolved)
+    aspect = _requested_aspect(resolved)
+    # Named vaccine and requested aspect are hard gates on source eligibility.
+    eligible = [r for r in pool if _relevant(resolved, r)
+                and (not topics or _document_topics(r) & topics)
+                and _matches_aspect(r, aspect)]
+    covered = set().union(*(_document_topics(r) for r in eligible)) if eligible else set()
+    if topics and not topics.issubset(covered):
+        return {"answer":"I do not have enough information about the requested vaccine in the approved CDC material. Please consult the CDC pages or a licensed healthcare professional.",
+                "refused":True,"sources":[],"trace":pool,"stats":stats,"reason":"missing_vaccine_topic"}
     # A safety filter avoids answering out-of-scope or ambiguous queries with filler excerpts.
-    content_words = set(tokenize(resolved)) - STOP
+    content_words = set(tokenize(resolved)) - STOP - GENERAL_VACCINE_WORDS
     if not eligible or not content_words:
         return {"answer":"I do not have enough information in the approved CDC material to answer that question. Please consult current CDC guidance or a licensed healthcare professional.","refused":True,"sources":[],"trace":pool,"stats":stats,"reason":"insufficient_evidence"}
     # Use original, visibly cited educational paraphrases in the local demo. Limit 3 evidence units.
@@ -120,12 +167,6 @@ def answer(question: str, mode="hybrid", corpus_path="", rerank=False, history=N
         if key not in seen:
             selected.append(r);seen.add(key)
         if len(selected)==3:break
-    # Avoid unrelated evidence: require subject-specific tokens when a vaccine name appears.
-    normalized = resolved.lower()
-    vaccines = [x for x in ("hpv","mmrv","mmr","tdap","shingles","zoster","vis") if re.search(r"\b"+x+r"\b", normalized)]
-    if vaccines:
-        narrowed=[r for r in selected if any(re.search(r"\b"+v+r"\b",(r["title"]+" "+r["text"]).lower()) for v in vaccines)]
-        if narrowed: selected=narrowed
     if not selected:
         return {"answer":"I don't have enough reliable CDC context for that question.","refused":True,"sources":[],"trace":pool,"stats":stats}
     answer_lines=[];sources=[]
