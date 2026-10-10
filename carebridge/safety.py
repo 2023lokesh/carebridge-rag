@@ -29,7 +29,7 @@ def screen_query(question: str) -> str | None:
         return "I cannot decide vaccination for a specific person. A licensed clinician should review the individual's medical history and current guidance."
     # Prevent lexical overlap with generic words like 'time' or 'good' from
     # turning an unrelated question into a cited medical answer.
-    if not re.search(r"\b(?:vaccin\w*|immuniz\w*|shot|shots|vis|vaccine information statements?|hpv|mmr|mmrv|tdap|covid(?:[-\s]?19)?|coronavirus|shingles|zoster|pertussis|rubella|measles|hepatitis|influenza|flu|rsv|cdc)\b",q,re.I):
+    if not re.search(r"\b(?:vaccin\w*|immuniz\w*|shot|shots|vis|vaccine information statements?|hpv|mmr|mmrv|tdap|covid(?:[-\s]?19)?|coronavirus|shingles|zoster|pertussis|rubella|measles|hepatitis|influenza|flu|rsv|polio|poliomyelitis|varicella|chickenpox|rotavirus|tetanus|diphtheria|pneumococcal|meningococcal|hib|haemophilus|dengue|cdc)\b",q,re.I):
         return "I do not have enough information about that topic in the approved CDC vaccine materials. Please ask a specific general vaccine-information question."
     if PERSONAL_CONTACT.search(q) or re.search(r"\b\d{3}[- ]?\d{2}[- ]?\d{4}\b", q):
         return "Please do not include names, contact details, social security numbers, or other personal medical identifiers. Ask a general vaccine-education question instead."

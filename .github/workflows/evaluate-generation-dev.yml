@@ -1,0 +1,66 @@
+name: Evaluate B0 B1 B2 B3 generated answers (private DEV only)
+on:
+  workflow_dispatch:
+    inputs:
+      index_run_id:
+        description: 'Successful fixed+heading neural-index run'
+        required: true
+        default: '38059975329'
+        type: string
+permissions:
+  contents: read
+  actions: read
+jobs:
+  generate-dev:
+    runs-on: ubuntu-latest
+    timeout-minutes: 110
+    env:
+      PYTHONUNBUFFERED: '1'
+      HF_HUB_DISABLE_TELEMETRY: '1'
+      HF_HUB_DISABLE_PROGRESS_BARS: '1'
+      TOKENIZERS_PARALLELISM: 'false'
+      OMP_NUM_THREADS: '4'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Restore measured and verified Chroma indexes
+        uses: actions/download-artifact@v4
+        with:
+          name: carebridge-token-safe-indexes-${{ inputs.index_run_id }}
+          run-id: ${{ inputs.index_run_id }}
+          github-token: ${{ github.token }}
+          path: .
+      - name: Install CPU-only neural retrievers and small real instruct LLM
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install 'torch>=2.2,<3' --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install -r requirements.txt 'chromadb>=0.5,<2' 'sentence-transformers>=3,<6' 'transformers>=4.48,<5' 'cryptography>=43,<50'
+      - name: Reconstruct and authenticate frozen 24-item DEV only
+        env:
+          CAREBRIDGE_DEV_GOLD_GZIP_B64: ${{ secrets.CAREBRIDGE_DEV_GOLD_GZIP_B64 }}
+        run: python -m scripts.load_private_dev --output .private_eval/dev_24.jsonl
+      - name: Generate actual B0 B1 B2 B3 answers with identical local model
+        env:
+          CAREBRIDGE_DEV_GOLD_GZIP_B64: ${{ secrets.CAREBRIDGE_DEV_GOLD_GZIP_B64 }}
+        run: |
+          python -m scripts.eval_generation_dev \
+            --dev .private_eval/dev_24.jsonl \
+            --manifest data/frozen_split_manifest.json \
+            --fixed data/chroma_fixed_v2 --heading data/chroma_heading_v2 \
+            --model HuggingFaceTB/SmolLM2-360M-Instruct \
+            --max-new-tokens 96 --output-dir reports/generation_eval
+      - name: Remove decrypted private development questions
+        if: always()
+        run: rm -f .private_eval/dev_24.jsonl
+      - name: Publish sanitized diagnostics plus encrypted human review answers
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: carebridge-dev-generated-answers-${{ github.run_id }}
+          path: |
+            reports/generation_eval/aggregate_automated.json
+            reports/generation_eval/PRIVATE_answer_review.json.fernet
+          retention-days: 7
+          if-no-files-found: error
