@@ -1,115 +1,90 @@
 # CareBridge — CDC-grounded vaccine education chatbot
 
-**Status:** runnable **educational prototype**, not a clinical decision-support tool. The public-facing demo is backed by a small, manually curated set of summaries linked to CDC pages; it is **not** the completed 150-page graded corpus. Do not enter patient data, personal health history or identifiers.
+**University of the Cumberlands MSAI 633 residency project · Updated October 10, 2026**
 
-CareBridge is a FastAPI app with a responsive chat page, source URLs, history-aware follow-ups, visible retrieval trace (pre/post ranking scores), explicit refusals, and emergency referral messaging. It needs **no API key** in its default demo mode.
+[Live educational demonstration](https://carebridge-vaccine-chatbot.onrender.com) · [GitHub repository](https://github.com/2023lokesh/carebridge-rag) · [Course submission status](docs/SUBMISSION_STATUS.md) · [Demo script](docs/DEMO_SCRIPT.md)
 
-## Quick start (Python 3.11 recommended)
+CareBridge is an **educational vaccine-reference prototype**, not a clinician, diagnosis engine, individualized vaccine recommendation system, or HIPAA-certified healthcare product. Do not enter protected health information or patient identifiers. A cited URL is not by itself proof that the text supports a specific medical claim or reflects the latest CDC guidance.
+
+## Two intentionally distinct configurations
+
+| Component | Public Render demo | Measured research/evaluation pipeline |
+| --- | --- | --- |
+| Data | Small curated vaccine summaries linked to CDC | **163 distinct archived normalized public CDC pages**, including 35 PDFs, 13 table-bearing HTML pages |
+| Retrieval | Local BM25 / TF-IDF proxy / hybrid and lightweight postscore | Real BM25, 384-dimensional MiniLM dense Chroma cosine, RRF, cross-encoder |
+| Chunking | Bundled demo blocks | **3,477 fixed** / **3,301 heading-aware**, tokenizer safe, zero orphans |
+| Inference | Deterministic demo reply; optional OpenAI if configured | Controlled same CPU-local SmolLM2-360M-Instruct planned for B0–B3 generation |
+| Evaluation | Smoke/demo tests, **not** graded metrics | Verified real retrieval-only DEV run #38062665587; generation implementation in PR #14 awaiting merge/run |
+
+**The deployed public demo does not currently query the 163-page Chroma index.** Distinguish the demo from the indexed experiment in any presentation.
+
+## Quick start: educational demo
+
+Use Python 3.11 or later:
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate        # On Windows: .venv\Scripts\activate
+source .venv/bin/activate
 python -m pip install -r requirements.txt
 python -m uvicorn app:app --host 127.0.0.1 --port 8000
+# Browse http://127.0.0.1:8000
 ```
 
-Open **http://127.0.0.1:8000**. Verify **http://127.0.0.1:8000/healthz**. For automated tests:
+Run tests:
 
 ```bash
-python -m pip install pytest httpx
+python -m pip install pytest httpx 'cryptography>=43,<50'
 python -m pytest -q
 ```
 
-For a running-server health/chat check, use `python scripts/smoke_test.py --url http://127.0.0.1:8000`.
+Endpoints: `GET /`, `GET /healthz`, and `POST /api/chat` with `{"question":"What is MMR?","mode":"hybrid","history":[]}`. The response has `answer`, `refused`, `sources`, `trace`, and `stats` where supported. The app provides clickable citations, history, explicit refusals, a visible retrieval trace and medical high-stakes referral. See `app.py`, `carebridge/rag.py`, `carebridge/safety.py` and `static/index.html`.
 
-### What it does today
+## Ethical real CDC corpus and indexes
 
-- **UI:** browser chat, clickable references, short-term follow-up handling, expandable retrieval trace, BM25 / hybrid / TF-IDF comparison.
-- **Default retrieval:** locally ranked BM25 + TF-IDF (non-neural proxy) with reciprocal-rank fusion; a 20-candidate pool (where at least 20 chunks exist); an explicitly named lightweight proxy post-score. The default demo does **not** claim to have neural embeddings or a cross-encoder reranker.
-- **Refusal:** personal clinical questions, emergencies, unsupported topics, and insufficient matching evidence. The citations are links to referenced CDC pages; the included summaries are not live CDC downloads.
-- **Optional generation:** enable only after installing `openai` and setting `OPENAI_API_KEY` and `CAREBRIDGE_GENERATION=openai`. The default answer generation is deterministic/extractive and free of third-party API calls.
-- **Not yet done:** actual 150-page crawl, ≥5 downloaded PDFs, ≥3 ingested table pages, human-verified 40-item golden set, dev/test evaluation, full-system benchmark, and hosted live deployment. Do not present these as completed for the course.
+The real crawl was performed through [GitHub Actions run #38016315533](https://github.com/2023lokesh/carebridge-rag/actions/runs/38016315533), not simulated. Result: **165 raw pages, 163 normalized pages, 35 PDFs, 13 table-containing HTML pages, 3,063 normalized blocks, no crawl errors or raw hash mismatches**. The crawler obeys robots.txt, descriptive User-Agent, ≥1 second between requests, CDC HTTPS allowlists, and excludes patient/staff/directory/login content. Raw evidence is retained in the external Actions artifact and locally by the team, not committed as bulk data to this repo.
 
-## Production-ish deployment to Render (after your own GitHub repo exists)
+From the saved archived normalized `data/normalized.jsonl`, the separate fixed and heading-aware MiniLM/Chroma indexes were built successfully by [Actions run #38059975329](https://github.com/2023lokesh/carebridge-rag/actions/runs/38059975329), producing **3,477** and **3,301** tokenizer-safe chunks respectively, with zero missing or orphan IDs. Each MiniLM vector has 384 dimensions, normalized for cosine distance. The indexes must be downloaded from the corresponding artifact; they are **not** part of the lightweight public demo deployment. Source and instructions: `carebridge/index.py`, `carebridge/token_budget.py`, `scripts/verify_comparison_indexes.py`, and `docs/TOKEN_SAFE_NEURAL_EVALUATION.md`.
 
-1. Create a **new** empty GitHub repository, ideally `carebridge-rag`, rather than reusing an unrelated project.
-2. Copy this whole directory into the new repo root. From this directory run:
+## Frozen golden set and observed DEV retrieval metrics
 
-   ```bash
-   git init
-   git checkout -b main
-   git add .
-   git commit -m "feat: add CareBridge educational chatbot"
-   git remote add origin https://github.com/YOUR_USERNAME/carebridge-rag.git
-   git push -u origin main
-   ```
+The team has attested individual review of the 40-question dataset. Its category distribution is **15 single-hop / 6 multi-hop / 4 comparative / 4 temporal / 8 unanswerable / 3 ambiguous**. The **24 DEV / 16 sealed TEST** stratified split uses random seed 633 and recorded fingerprints. The original question candidates were **AI-assisted**, subsequently self-reviewed by assigned team members on October 10; **independent student authorship before chatbot development has not been established**. Do not claim Friday-before-system authorship; follow instructor instructions for academic-integrity disclosure. See `reports/03_golden_set.md`.
 
-3. In [Render Dashboard](https://dashboard.render.com/), choose **New → Blueprint** and select this GitHub repository. The included `render.yaml` creates the `carebridge-vaccine-chatbot` free Python web service with build command `pip install -r requirements.txt`, start command `uvicorn app:app --host 0.0.0.0 --port $PORT`, and health check `/healthz`.
-4. After the build is **Live**, use the URL Render displays, then test `https://YOUR-SERVICE.onrender.com/healthz`. Do not guess the subdomain before deployment succeeds.
-5. On free plans, the service may sleep between visits. **Do not add** `OPENAI_API_KEY` for the public classroom demo; use the bundled local demo to avoid cost and inadvertent disclosure of patient questions.
+A **real successful retrieval-only** [DEV evaluation run #38062665587](https://github.com/2023lokesh/carebridge-rag/actions/runs/38062665587) authenticated **24 development records, 0 TEST records** and evaluated the **18 source-URL-labelled** DEV questions. Unanswerable/ambiguous cases need refusal evaluation, not bogus retrieval success.
 
-**GitHub course workflow:** In repository settings protect `main`, require 1 PR approval (when team review is available), turn on Issues, use short-lived branches, and create issues for crawl, extraction, indexing, evaluation, ethics, and documentation. Never commit `.env`, tokens, or raw private data.
+| Metric | B1 BM25 fixed | B2 MiniLM fixed | B3 heading hybrid + cross-encoder |
+| --- | ---: | ---: | ---: |
+| Recall@5 | 0.6944 | 0.8056 | **0.8889** |
+| Recall@20 | 0.9444 | **1.0000** | **1.0000** |
+| MRR | 0.5903 | **0.7469** | 0.7231 |
+| nDCG@10 | 0.6305 | **0.7757** | 0.7463 |
+| p50 warm retrieval (ms) | 88.59 | **14.93** | 928.93 |
+| p95 warm retrieval (ms) | 93.09 | **17.96** | 988.44 |
 
-## Full graded RAG pipeline: optional, not shipped as deployed demo
+This is **source-URL-level retrieval relevance**, not human-confirmed passage entailment or generated-answer correctness. Latencies exclude model startup and generation, and B1 recomputes lexical tokenization per query. All nonzero Recall@5 paired bootstrap intervals include zero. See [retrieval and reranking report](reports/04_retrieval_reranking.md) and [full performance limitations](reports/06_final_performance.md).
 
-The modules below are implemented as an **experimental workflow** but require separate corpus collection and model installation; these commands have not been benchmarked against a complete corpus.
+## B0–B3 generation and human scoring: implementation prepared
 
-```bash
-python -m pip install -r requirements-full.txt
-python -m carebridge.crawler --contact your-valid-email@example.edu --max-pages 150
-python -m carebridge.extract --manifest data/raw/manifest.jsonl --output data/normalized.jsonl
-python -m carebridge.index --corpus data/normalized.jsonl --strategy fixed
-python -m carebridge.index --corpus data/normalized.jsonl --strategy heading
-# Each rebuild deletes old chunks then verifies the active IDs, without re-crawling.
-# To run the indexed corpus locally, set CAREBRIDGE_BACKEND=full after preparing the index.
-```
+[PR #14](https://github.com/2023lokesh/carebridge-rag/pull/14) adds the **DEV-only** four-baseline generated-answer workflow (`.github/workflows/evaluate-generation-dev.yml`), `scripts/eval_generation_dev.py`, private decryption and human-review scoring tools, and regression safety tests. The model is the **same SmolLM2-360M-Instruct CPU-local instruct generator** for all four baselines; retrieval and reranking are varied in controlled conditions. Runs use **24 DEV questions × 4 baselines = 96 generated answers**; the 16 TEST questions remain sealed.
 
-**Warning:** the crawler checks `robots.txt` with a descriptive `User-Agent`, allows at most one request per second, only follows CDC vaccine/IIS HTTPS URLs, refuses redirects off-site, stores raw bytes before parsing, and excludes directory/login pages and identifiable contact details. A real contact email is required. Inspect site permissions and the saved manifest, including final distinct URLs/PDFs/tables, before submission. Some pages may disallow crawling; do not bypass restrictions. Raw data and persistent indexes are gitignored.
+**Do not quote B0 scores, generated-answer accuracy, citation support, refusal quality, clinical safety, or end-to-end latency until a successful workflow and independent human scoring actually exist.** The Actions artifact will contain only sanitized automated output and **Fernet-encrypted** questions/answers. Human reviewers locally decrypt with the existing DEV secret, review every answer and actual CDC passage, record reviewer identities/dates and genuine failure categories, then compute paired accuracy CIs. The course requires at least 15 real manually categorized errors; none are fabricated in this repo.
 
-**Two chunk strategies:** fixed 450-token word windows with 75 overlap, and heading-sensitive windowing. Chunk IDs deterministically hash the document, strategy, local index, and text. The Chroma index uses SentenceTransformer `all-MiniLM-L6-v2` (384 dimensions, normalized embeddings, cosine metric), plus lexical BM25 and optional `cross-encoder/ms-marco-MiniLM-L-6-v2` reranking. See `carebridge/index.py`, `carebridge/full_backend.py`. Chroma runs locally and is not provisioned on a free Render server by default; an ephemeral file system is unsuitable for a persistent 150-page index unless rebuilt from committed public normalized data at deploy time or moved to durable storage.
+Protocol: [docs/GENERATION_B0_B3_HUMAN_SCORING.md](docs/GENERATION_B0_B3_HUMAN_SCORING.md).
 
-## Evaluation and coursework
+## Reports, collaboration and academic integrity
 
-A **real** 40-question golden set must be authored from sources, human-verified and split once 60/40 by category (15 single-hop, 6 multi-hop, 4 comparative, 4 temporal, 8 unanswerable, 3 ambiguous/adversarial). `carebridge/evaluate.py` enforces human verification and creates reproducible splits, with retrieval metrics. Further grading requires actual B0 (no retrieval), B1 (BM25), B2 (neural dense + naive chunks), and B3 (final hybrid/reranker) runs, answer/citation/refusal checks, latency/cost, confidence intervals, error-label review, and an honest Sunday report. The presence of code is **not** evidence of a measured score.
+- [`reports/00_proposal.md`](reports/00_proposal.md) — problem, source, architecture and plan.
+- [`reports/01_ingestion.md`](reports/01_ingestion.md) — actual CDC acquisition and audit.
+- [`reports/02_chunking.md`](reports/02_chunking.md) — measured chunking/re-index and controlled BM25 ablation.
+- [`reports/03_golden_set.md`](reports/03_golden_set.md) — frozen categories, review attestation and original AI-assisted provenance.
+- [`reports/04_retrieval_reranking.md`](reports/04_retrieval_reranking.md) — actual B1/B2/B3 retrieval metrics, one-factor reranker test and paired 95% CIs.
+- [`reports/05_generation.md`](reports/05_generation.md) — genuine generator protocol and unmeasured accuracy/safety requirements.
+- [`reports/06_final_performance.md`](reports/06_final_performance.md) — what was actually measured, omissions and reproducibility.
+- [`reports/07_ethics.md`](reports/07_ethics.md) — crawl etiquette, PII avoidance, refusals, prompt injection, staleness and limits.
 
-Proposal: `reports/00_proposal.md`. See the instructions in the uploaded MSAI 633 project brief for additional grading criteria.
+Collaboration should use feature branches, **actual separate teammate approvals**, recorded individual commits and GitHub Issues/Projects. Existing PRs and tests do not substitute for missing formal approval evidence. `main` branch protection enforcement must be verified by an administrator. Never publish `.env`, protected information, the secret, private golden content, raw user messages or decrypted response review CSV.
 
-## API
+**AI-use disclosure:** AI-assisted code, draft questions, documentation and technical guidance were used in this project. The team reviewed source accuracy and must be able to explain all evaluation formulas and data/ethics decisions. The instructor requires student authorship of golden questions before the chatbot existed; the team's disclosed chronology differs from that rule and requires an instructor-approved determination, not invented dates.
 
-- `GET /` — responsive chat UI
-- `GET /healthz` — health and active mode
-- `POST /api/chat` — `{ "question": "What does MMR protect against?", "mode": "hybrid", "history": [] }`; returns `answer`, `refused`, `sources`, `trace`, `stats`.
+## Known limitations
 
-No authentication is included: this is **not suitable for real clinical deployments**. Do not submit patient identifiers, symptoms, or health history. No request text is intentionally persisted; Render and other hosting providers may log metadata, and optional LLM requests would be processed by the configured model provider. No HIPAA or medical compliance claim is made.
-
-## Medical safety and ethics
-
-This project is **educational**, not intended to diagnose, triage, treat, prescribe, recommend vaccination for an individual, or replace a clinician. An emergency query shows a 911/local-emergency-number referral; personal clinical questions trigger referral, not an individualized answer. Retrieved webpages are untrusted data; obvious injection phrases and contact details are excluded. The latest policy and clinician recommendations must be checked at the CDC source because medical guidance can change. Citation URL presence alone does not prove sentence-level factual verification.
-
-**AI-use note:** Portions of the source code, documentation, and the manually curated demo explanations were drafted with an AI assistant. Team members must inspect source accuracy, review logic, independently author and verify the golden set, and disclose AI usage under the project rubric.
-
-## File map
-
-```text
-app.py                     FastAPI server and API
-static/index.html          Browser chatbot UI
-carebridge/rag.py          Lightweight retrieval and response path
-carebridge/safety.py       Safety, URL, prompt-injection checks
-carebridge/crawler.py      Ethical public CDC crawler
-carebridge/extract.py      HTML and PDF content extraction
-carebridge/corpus.py       Normalization, deterministic IDs and chunking
-carebridge/index.py        Optional neural Chroma indexing/re-chunk
-carebridge/full_backend.py Optional dense + BM25 + cross-encoder retrieval
-carebridge/evaluate.py     Golden-set constraints, metrics/split
-carebridge/generate.py     Optional cited OpenAI generation
-render.yaml                Render Blueprint
-Dockerfile                 Alternate container deployment
-scripts/smoke_test.py      Running-service smoke test
-.github/workflows/tests.yml GitHub Actions test workflow
-tests/                     Automated tests
-```
-
-
-## MSAI 633 evaluation-workflow update
-
-The feature branch includes a [graded-workflow runbook](docs/EVALUATION_RUNBOOK.md), a [crawl audit](carebridge/audit.py), a [40-question AI-generated *practice* set](data/practice_question_ideas.jsonl), [branch-protection setup instructions](docs/BRANCH_PROTECTION.md), and honest, unexecuted report templates. Practice examples are **not** independently human-verified gold items. The full 150-document CDC crawl and B0–B3 scoring still require actual execution and team verification. This project currently runs a small prototype on Render; it is not a clinical decision-support system.
+Clinical accuracy, hallucination rate, citation entailment, generated-answer/refusal rates, prompt-injection resistance under live LLM generation, staleness display, 15-case failure adjudication, private final 16-item TEST run, and full deployed 163-page index integration are **not yet verified complete**. B3 changes multiple factors versus B2; only its within-candidate reranker ablation is one-factor. GitHub artifacts have short retention; download evidence before **October 17, 2026**.
