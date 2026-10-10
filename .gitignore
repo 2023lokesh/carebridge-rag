@@ -1,17 +1,21 @@
-# Python
-__pycache__/
-*.py[cod]
-.pytest_cache/
-.venv/
-venv/
 .env
 .env.*
 !.env.example
-# Local indexes and data
-*.sqlite3
-*.db
-storage/
-data/raw/
-data/normalized/
-# OS
+__pycache__/
+.pytest_cache/
+.venv/
+venv/
+*.py[cod]
 .DS_Store
+*.db
+*.sqlite3
+*.log
+*.key
+*.pem
+secrets.*
+.streamlit/secrets.toml
+data/raw/
+data/chroma/
+data/normalized.jsonl
+data/eval_split.json
+reports/*_results.json
