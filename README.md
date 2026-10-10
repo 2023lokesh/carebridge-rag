@@ -2,7 +2,10 @@
 
 **University of the Cumberlands MSAI 633 residency project · Updated October 10, 2026**
 
-[Live educational demonstration](https://carebridge-vaccine-chatbot.onrender.com) · [GitHub repository](https://github.com/2023lokesh/carebridge-rag) · [Course submission status](docs/SUBMISSION_STATUS.md) · [Demo script](docs/DEMO_SCRIPT.md)
+[Live educational demonstration](https://carebridge-vaccine-chatbot.onrender.com)
+
+**Website experience (professor-requested refresh):** The homepage is now a standalone introduction to CareBridge, its CDC-linked educational role, how it works and medical-safety limits. A bottom-right **Ask CareBridge** floating chatbot opens a guided two-step topic/question wizard with free-text questions, linked CDC evidence and the existing `/api/chat` endpoint. Mobile and keyboard controls are supported. The public demo continues to use curated summaries/lexical retrieval, not the independently evaluated 163-page MiniLM/Chroma corpus. See [the web-widget guide](docs/WEB_WIDGET_GUIDE.md).
+ · [GitHub repository](https://github.com/2023lokesh/carebridge-rag) · [Course submission status](docs/SUBMISSION_STATUS.md) · [Demo script](docs/DEMO_SCRIPT.md)
 
 CareBridge is an **educational vaccine-reference prototype**, not a clinician, diagnosis engine, individualized vaccine recommendation system, or HIPAA-certified healthcare product. Do not enter protected health information or patient identifiers. A cited URL is not by itself proof that the text supports a specific medical claim or reflects the latest CDC guidance.
 
