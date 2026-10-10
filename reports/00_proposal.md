@@ -66,7 +66,31 @@ Exact library and model revisions will be pinned in a lock file once installed; 
 
 ## 4. System architecture and end-to-end data flow
 
-![CareBridge RAG architecture with offline scraping, extraction, chunking, embeddings, vector and BM25 indexes; online retrieval, reranking, safety checks, generation and cited chat output.](carebridge_architecture.png)
+```mermaid
+flowchart LR
+  subgraph Ingestion[Offline corpus pipeline]
+    SRC[Public CDC HTML, PDFs, tables] --> CRAWL[Ethical scraper and raw archive]
+    CRAWL --> EXTRACT[Extraction, normalization and dedupe]
+    EXTRACT --> CHUNK[Fixed / structure-aware chunking]
+    CHUNK --> EMBED[Normalized embeddings]
+    EMBED --> VECTOR[(Chroma vector database)]
+    CHUNK --> BM25[(BM25 index)]
+  end
+  subgraph Chat[Online question-answer pipeline]
+    INPUT[Chat interface and history] --> SAFETY[Question scope and safety gate]
+    SAFETY --> RETRIEVE[Dense, BM25 or hybrid retrieval]
+    RETRIEVE --> RERANK[Rerank top 20 to top 5]
+    RERANK --> GROUND[Evidence sufficiency and freshness gate]
+    GROUND -->|supported| GEN[Evidence-constrained generation]
+    GROUND -->|unsupported or high-risk| REFUSE[Refusal / clinician referral]
+    GEN --> CITE[Citation validation]
+    CITE --> ANSWER[Cited answer in chat]
+  end
+  VECTOR --> RETRIEVE
+  BM25 --> RETRIEVE
+```
+
+*Design diagram for the planned full RAG pipeline. The hosted demo defaults to the lightweight offline-curated retrieval path described in the README.*
 
 **Offline ingestion:** (1) crawl only permitted public CDC URLs → (2) archive original bytes and provenance → (3) extract heading paths, PDF page text and intact table records → (4) normalize/deduplicate → (5) create both chunk strategies for comparison → (6) L2-normalize and embed chunks → (7) persist Chroma vectors and a matching BM25 snapshot. All indices reference the same document manifest and version.
 
