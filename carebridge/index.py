@@ -10,6 +10,7 @@ import os
 import statistics
 from pathlib import Path
 from .corpus import chunk_documents,load_documents
+from .token_budget import enforce_model_token_budget
 
 def chunk_stats(chunks):
     sizes=sorted(len(c['text'].split()) for c in chunks)
@@ -24,13 +25,19 @@ def rebuild(corpus,db_dir='data/chroma',strategy='heading',collection_name='care
     corpus=Path(corpus);db_dir=Path(db_dir)
     model_name='sentence-transformers/all-MiniLM-L6-v2'
     model=SentenceTransformer(model_name)
+    # The sentence-transformer truncates at 256 wordpieces; smaller overlapping
+    # fixed windows reduce silent evidence loss compared to the old 450-word default.
     fixed_size, fixed_overlap = 180, 30
     normalized = load_documents(corpus)
-    chunks=chunk_documents(normalized,strategy,size=fixed_size if strategy=="fixed" else 450,overlap=fixed_overlap if strategy=="fixed" else 75)
+    chunks=chunk_documents(normalized,strategy,size=fixed_size if strategy=="fixed" else 450,
+                           overlap=fixed_overlap if strategy=="fixed" else 75)
     if not chunks:raise ValueError('No normalized chunks available: refusing empty index')
+    chunks, budget_stats = enforce_model_token_budget(
+        chunks, model.tokenizer, model.max_seq_length, overlap_tokens=24)
+    if not chunks:raise ValueError('Token-budget splitting created empty index')
     ids=[r['chunk_id'] for r in chunks]
     if len(ids)!=len(set(ids)):raise ValueError('Deterministic chunk IDs must be unique')
-    digest=hashlib.sha256(corpus.read_bytes()+strategy.encode()).hexdigest()[:16]
+    digest=hashlib.sha256(corpus.read_bytes()+strategy.encode()+b'token-budget-v1').hexdigest()[:16]
     active_name=f'{collection_name}_{strategy}_{digest}'
     db_dir.mkdir(parents=True,exist_ok=True)
     client=chromadb.PersistentClient(path=str(db_dir))
@@ -49,22 +56,30 @@ def rebuild(corpus,db_dir='data/chroma',strategy='heading',collection_name='care
                  'strategy':strategy} for r in batch])
     actual=set(coll.get(include=[])['ids']);expected=set(ids)
     if actual!=expected:raise AssertionError(f'Index mismatch: orphans={len(actual-expected)}, missing={len(expected-actual)}')
-    model_token_lengths=[]
-    for start in range(0,len(chunks),128):
-        model_token_lengths.extend(model.tokenizer([x["text"] for x in chunks[start:start+128]],truncation=False,padding=False,return_length=True)["length"])
-    ordered_token_lengths=sorted(model_token_lengths)
+    # Count real transformer tokenizer tokens (not just space-delimited words).
+    wordpiece_lengths=[]
+    for offset in range(0,len(chunks),128):
+        encoded=model.tokenizer([x['text'] for x in chunks[offset:offset+128]],
+                                truncation=False, padding=False, return_length=True)
+        wordpiece_lengths.extend(encoded['length'])
     model_limit=int(model.max_seq_length)
+    sorted_lengths=sorted(wordpiece_lengths)
+    if any(length > model_limit for length in wordpiece_lengths):
+        raise AssertionError('Token-budget failure: one or more chunks will be silently truncated')
     row={'strategy':strategy,'collection':active_name,'corpus_sha256':hashlib.sha256(corpus.read_bytes()).hexdigest(),
          'chunks':len(chunks),'ids_verified':len(actual),'orphans':0,
+         **budget_stats,
          'model':model_name,'dimension':384,'metric':'cosine','l2_normalized':True,
-         'source_rows':len(normalized),'source_urls':len({x["url"] for x in chunks}),
-         'fixed_window_words':fixed_size if strategy=="fixed" else None,
-         'fixed_overlap_words':fixed_overlap if strategy=="fixed" else None,
+         'source_rows':len(normalized), 'source_urls':len({x['url'] for x in chunks}),
+         'fixed_window_words':fixed_size if strategy=='fixed' else None,
+         'fixed_overlap_words':fixed_overlap if strategy=='fixed' else None,
          'model_max_seq_length':model_limit,
-         'p50_model_tokens':statistics.median(ordered_token_lengths),
-         'p95_model_tokens':ordered_token_lengths[min(len(ordered_token_lengths)-1,round((len(ordered_token_lengths)-1)*.95))],
-         'chunks_over_model_limit':sum(x>model_limit for x in model_token_lengths),
-         'token_length_proxy':'Whitespace counts; model tokenizer separately measured',**chunk_stats(chunks)}
+         'p50_model_tokens':statistics.median(sorted_lengths),
+         'p95_model_tokens':sorted_lengths[min(len(sorted_lengths)-1,round((len(sorted_lengths)-1)*.95))],
+         'max_model_tokens':sorted_lengths[-1],
+         'chunks_over_model_limit':sum(n>model_limit for n in wordpiece_lengths),
+         'token_length_proxy':'Whitespace counts reported separately; model token stats use actual tokenizer',
+         **chunk_stats(chunks)}
     # Swap manifests only after index verification; do not overwrite when failed.
     chunk_out=db_dir/'active_chunks.jsonl'
     staging=db_dir/'active_chunks.staging'

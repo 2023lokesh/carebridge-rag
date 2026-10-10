@@ -19,9 +19,12 @@ data/chroma/
 data/normalized.jsonl
 data/eval_split.json
 reports/*_results.json
-
-# Do not publish gold labels or sealed test answers
+# Human evaluation labels and sealed holdout must never leak through public GitHub
 data/gold_human.jsonl
 data/gold_team_attested_frozen.jsonl
 data/dev_24.jsonl
 data/test_16*.jsonl
+# New tokenizer-capped neural databases and local grading evidence
+data/chroma_fixed_v2/
+data/chroma_heading_v2/
+reports/dev_private/
