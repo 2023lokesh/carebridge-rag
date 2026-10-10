@@ -22,6 +22,10 @@ from .safety import safe_url
 SEEDS = (
     "https://www.cdc.gov/vaccines/hcp/current-vis/index.html",
     "https://www.cdc.gov/iis/code-sets/vis-url-table.html",
+    "https://www.cdc.gov/vaccines/hcp/imz-schedules/adult-age-compliant.html",
+    "https://www.cdc.gov/vaccines/hcp/imz-schedules/child-adolescent-age-compliant.html",
+    "https://www.cdc.gov/vaccines/hcp/imz-schedules/adult-medical-condition-compliant.html",
+    "https://www.cdc.gov/vaccines/hcp/imz-schedules/child-adolescent-medical-indication-compliant.html",
     "https://www.cdc.gov/vaccines/hcp/current-vis/mmr.html",
     "https://www.cdc.gov/vaccines/hcp/current-vis/mmrv.html",
     "https://www.cdc.gov/vaccines/hcp/current-vis/tdap.html",
@@ -31,7 +35,10 @@ SEEDS = (
     "https://www.cdc.gov/vaccines/hcp/current-vis/downloads/mmrv.pdf",
     "https://www.cdc.gov/vaccines/hcp/current-vis/downloads/tdap.pdf",
     "https://www.cdc.gov/vaccines/hcp/current-vis/downloads/hpv.pdf",
-    "https://www.cdc.gov/vaccines/hcp/current-vis/downloads/shingles-recombinant.pdf",
+    "https://www.cdc.gov/vaccines/hcp/current-vis/downloads/hep-a.pdf",
+    "https://www.cdc.gov/vaccines/hcp/current-vis/downloads/hep-b.pdf",
+    "https://www.cdc.gov/vaccines/hcp/current-vis/downloads/hib.pdf",
+    "https://www.cdc.gov/vaccines/hcp/current-vis/downloads/dtap.pdf",
 )
 
 def _timestamp():

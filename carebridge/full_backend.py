@@ -16,10 +16,11 @@ def _loaded():
     from sentence_transformers import SentenceTransformer
     root=Path(__file__).resolve().parents[1]
     folder=root / os.environ.get("CAREBRIDGE_DB_DIR","data/chroma")
-    paths=root / os.environ.get("CAREBRIDGE_CHUNKS","data/active_chunks.jsonl")
+    pointer=json.loads((folder / "active_index.json").read_text(encoding="utf8"))
+    paths=folder / "active_chunks.jsonl"
     docs=[json.loads(x) for x in paths.read_text(encoding="utf-8").splitlines() if x.strip()]
     client=chromadb.PersistentClient(path=str(folder))
-    collection=client.get_collection("carebridge")
+    collection=client.get_collection(pointer["collection"])
     model=SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
     return docs,collection,model
 
