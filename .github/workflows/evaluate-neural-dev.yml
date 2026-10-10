@@ -1,0 +1,64 @@
+name: Evaluate real CDC B1 B2 B3 (private DEV only)
+on:
+  workflow_dispatch:
+    inputs:
+      index_run_id:
+        description: "Successful token-safe fixed + heading index build run"
+        required: true
+        default: "38059975329"
+        type: string
+permissions:
+  contents: read
+  actions: read
+jobs:
+  evaluation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    env:
+      HF_HUB_DISABLE_TELEMETRY: "1"
+      TOKENIZERS_PARALLELISM: "false"
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Download already built neural indexes; no re-crawl
+        uses: actions/download-artifact@v4
+        with:
+          name: carebridge-token-safe-indexes-${{ inputs.index_run_id }}
+          run-id: ${{ inputs.index_run_id }}
+          github-token: ${{ github.token }}
+          path: .
+      - name: Install CPU-only neural evaluation packages
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install 'torch>=2.2,<3' --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install -r requirements.txt 'chromadb>=0.5,<2' 'sentence-transformers>=3,<6'
+      - name: Validate private 24-question development payload against immutable published SHA
+        env:
+          CAREBRIDGE_DEV_GOLD_GZIP_B64: ${{ secrets.CAREBRIDGE_DEV_GOLD_GZIP_B64 }}
+        run: python -m scripts.load_private_dev --output .private_eval/dev_24.jsonl
+      - name: B1 BM25 retrieval on fixed chunks
+        run: python -m scripts.eval_dev_retrieval --baseline B1 --dev .private_eval/dev_24.jsonl --db-dir data/chroma_fixed_v2 --output reports/dev_metrics/B1.json
+      - name: B2 neural-dense MiniLM retrieval on identical fixed chunks
+        run: python -m scripts.eval_dev_retrieval --baseline B2 --dev .private_eval/dev_24.jsonl --db-dir data/chroma_fixed_v2 --output reports/dev_metrics/B2.json
+      - name: B3 heading-aware BM25/dense RRF plus 20-candidate cross-encoder
+        run: python -m scripts.eval_dev_retrieval --baseline B3 --dev .private_eval/dev_24.jsonl --db-dir data/chroma_heading_v2 --output reports/dev_metrics/B3.json
+      - name: Compute paired 95 percent confidence intervals and within-B3 reranker lift
+        run: python -m scripts.dev_eval_report --b1 reports/dev_metrics/B1.json --b2 reports/dev_metrics/B2.json --b3 reports/dev_metrics/B3.json --output reports/dev_metrics/paired_comparison.json
+      - name: Remove private development questions from workspace
+        if: always()
+        run: rm -f .private_eval/dev_24.jsonl
+      - name: Save safe scores only (never golden Q/A labels)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: carebridge-development-retrieval-${{ github.run_id }}
+          path: |
+            reports/dev_metrics/B1.json
+            reports/dev_metrics/B2.json
+            reports/dev_metrics/B3.json
+            reports/dev_metrics/paired_comparison.json
+          retention-days: 7
+          if-no-files-found: error

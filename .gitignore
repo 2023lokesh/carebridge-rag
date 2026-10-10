@@ -28,3 +28,6 @@ data/test_16*.jsonl
 data/chroma_fixed_v2/
 data/chroma_heading_v2/
 reports/dev_private/
+
+# Private development gold reconstructed from Actions secret during ephemeral evaluation
+.private_eval/

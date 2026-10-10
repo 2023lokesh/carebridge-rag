@@ -111,6 +111,7 @@ def evaluate(baseline, dev_path, db_dir, output):
     results=[]
     for row in gold:
         query=row['question']; start=time.perf_counter()
+        pre_rerank_metrics=None
         if baseline=='B1':
             ranks=bm25_rank(query,docs,20)
         elif baseline=='B2':
@@ -123,6 +124,7 @@ def evaluate(baseline, dev_path, db_dir, output):
             candidates=set(bm)|set(dense)
             ranks=sorted(candidates,key=lambda ix:-(1/(60+bmr[ix]) if ix in bmr else 0)-
                          (1/(60+dr[ix]) if ix in dr else 0))[:20]
+            pre_rerank_metrics=_metrics(row['gold_source_urls'],[docs[i] for i in ranks])
             scores=cross_encoder.predict([[query,docs[i]['text']] for i in ranks])
             ranks=[ix for ix,_ in sorted(zip(ranks,scores),key=lambda e:float(e[1]),reverse=True)]
         latency=(time.perf_counter()-start)*1000
@@ -130,7 +132,8 @@ def evaluate(baseline, dev_path, db_dir, output):
         results.append({'id':row['id'],'category':row['category'],'metrics':m,
                         'latency_ms':round(latency,2), 'candidate_chunks':len(ranks),
                         'top_5_chunk_ids':[docs[i]['chunk_id'] for i in ranks[:5]],
-                        'top_20_urls':[docs[i]['url'] for i in ranks]})
+                        'top_20_urls':[docs[i]['url'] for i in ranks],
+                        **({'pre_rerank_metrics':pre_rerank_metrics} if pre_rerank_metrics is not None else {})})
     latencies=sorted(x['latency_ms'] for x in results)
     summary={'baseline':baseline,'index_strategy':meta['strategy'],'index_model':meta['model'],
              'source_pages':meta.get('source_urls'),'indexed_chunks':len(docs),
