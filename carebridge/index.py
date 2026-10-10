@@ -24,7 +24,9 @@ def rebuild(corpus,db_dir='data/chroma',strategy='heading',collection_name='care
     corpus=Path(corpus);db_dir=Path(db_dir)
     model_name='sentence-transformers/all-MiniLM-L6-v2'
     model=SentenceTransformer(model_name)
-    chunks=chunk_documents(load_documents(corpus),strategy)
+    fixed_size, fixed_overlap = 180, 30
+    normalized = load_documents(corpus)
+    chunks=chunk_documents(normalized,strategy,size=fixed_size if strategy=="fixed" else 450,overlap=fixed_overlap if strategy=="fixed" else 75)
     if not chunks:raise ValueError('No normalized chunks available: refusing empty index')
     ids=[r['chunk_id'] for r in chunks]
     if len(ids)!=len(set(ids)):raise ValueError('Deterministic chunk IDs must be unique')
@@ -47,10 +49,22 @@ def rebuild(corpus,db_dir='data/chroma',strategy='heading',collection_name='care
                  'strategy':strategy} for r in batch])
     actual=set(coll.get(include=[])['ids']);expected=set(ids)
     if actual!=expected:raise AssertionError(f'Index mismatch: orphans={len(actual-expected)}, missing={len(expected-actual)}')
+    model_token_lengths=[]
+    for start in range(0,len(chunks),128):
+        model_token_lengths.extend(model.tokenizer([x["text"] for x in chunks[start:start+128]],truncation=False,padding=False,return_length=True)["length"])
+    ordered_token_lengths=sorted(model_token_lengths)
+    model_limit=int(model.max_seq_length)
     row={'strategy':strategy,'collection':active_name,'corpus_sha256':hashlib.sha256(corpus.read_bytes()).hexdigest(),
          'chunks':len(chunks),'ids_verified':len(actual),'orphans':0,
          'model':model_name,'dimension':384,'metric':'cosine','l2_normalized':True,
-         'token_length_proxy':'whitespace-word counts, NOT model tokenizer',**chunk_stats(chunks)}
+         'source_rows':len(normalized),'source_urls':len({x["url"] for x in chunks}),
+         'fixed_window_words':fixed_size if strategy=="fixed" else None,
+         'fixed_overlap_words':fixed_overlap if strategy=="fixed" else None,
+         'model_max_seq_length':model_limit,
+         'p50_model_tokens':statistics.median(ordered_token_lengths),
+         'p95_model_tokens':ordered_token_lengths[min(len(ordered_token_lengths)-1,round((len(ordered_token_lengths)-1)*.95))],
+         'chunks_over_model_limit':sum(x>model_limit for x in model_token_lengths),
+         'token_length_proxy':'Whitespace counts; model tokenizer separately measured',**chunk_stats(chunks)}
     # Swap manifests only after index verification; do not overwrite when failed.
     chunk_out=db_dir/'active_chunks.jsonl'
     staging=db_dir/'active_chunks.staging'

@@ -33,6 +33,7 @@ def chunk_documents(documents, strategy="fixed", size=450, overlap=75, min_size=
     if not 0 <= overlap < size:
         raise ValueError("overlap must be >= 0 and < size")
     output = []
+    seen_chunk_ids = set()
     for doc in documents:
         text = doc["text"].strip()
         if not text:
@@ -52,6 +53,9 @@ def chunk_documents(documents, strategy="fixed", size=450, overlap=75, min_size=
             if len(window.split()) < min_size:
                 continue
             row = {**doc, "text":window,"strategy":strategy,"index":idx}
-            row["chunk_id"] = stable_id(doc.get("doc_id") or doc["url"], strategy, str(idx), window)
+            row["chunk_id"] = stable_id(doc.get("doc_id") or doc["url"],doc.get("section",""),doc.get("page_type",""),strategy,str(idx),window)
+            if row["chunk_id"] in seen_chunk_ids:
+                continue
+            seen_chunk_ids.add(row["chunk_id"])
             output.append(row)
     return output
